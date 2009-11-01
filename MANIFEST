@@ -1,0 +1,7 @@
+* CHANGES
+* MANIFEST
+* pr-win32ole.gemspec
+* Rakefile
+* README
+* lib/win32ole.rb
+* test/test_win32ole.rb

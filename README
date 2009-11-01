@@ -1,0 +1,31 @@
+== Description
+   This is a pure Ruby version of the win32ole library that ships as part
+   of the Ruby standard library.
+
+== Synopsis
+   require 'pr/win32ole'
+
+   # Your standard win32ole code here
+
+== Notes
+   The interface and semantics are identical to the win32ole library that
+   ship as part of the Ruby standard library. Any code you wrote using the
+   C extension should work with this library as well.
+
+== Purpose
+   The current win32ole code is difficult to maintain, decipher and debug.
+   By providing a pure Ruby version, we make maintenance and debugging much
+   more manageable. In addition, it is much easier to extend and modify.
+   Finally, it can be updated more readily because it's an independent library.
+
+== Copyright
+   (C) 2009, Park Heesob and Daniel Berger, All Rights Reserved
+
+== Warranty
+   This package is provided "as is" and without any express or
+   implied warranties, including, without limitation, the implied
+   warranties of merchantability and fitness for a particular purpose.
+
+== Authors
+   Park Heesob
+   Daniel Berger
