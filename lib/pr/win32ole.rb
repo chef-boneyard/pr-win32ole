@@ -4347,516 +4347,577 @@ class WIN32OLE_PARAM
 end
 
 class WIN32OLE_EVENT
-   @@ary_ole_event = []
+  @@ary_ole_event = []
       
-   @@g_IsEventSinkVtblInitialized = false
-   IEventSinkVtbl = Struct.new(:QueryInterface,:AddRef,:Release,:GetTypeInfoCount,:GetTypeInfo,:GetIDsOfNames,:Invoke)
-   IEVENTSINKOBJ = Struct.new(:lpVtbl,:m_cRef,:m_iid,:m_event_id,:pTypeInfo)
+  @@g_IsEventSinkVtblInitialized = false
+
+  IEventSinkVtbl = Struct.new(:QueryInterface,:AddRef,:Release,:GetTypeInfoCount,:GetTypeInfo,:GetIDsOfNames,:Invoke)
+  IEVENTSINKOBJ = Struct.new(:lpVtbl,:m_cRef,:m_iid,:m_event_id,:pTypeInfo)
    
-   
-   @@EVENTSINK_QueryInterface = Win32::API::Callback.new('LLL','L',&lambda { |pEV,riid,ppv|
-      ref = 0.chr * 20
-      memcpy(ref,pEV,20)
-      iid = 0.chr * 16
-      memcpy(iid,riid,16)
-      p = IEVENTSINKOBJ.new(*ref.unpack('L*'))
-      m_iid = p.m_iid
-      ref = 0.chr * 16
-      memcpy(ref,m_iid,16)
-      if iid == WIN32OLE::IID_IUnknown || iid == WIN32OLE::IID_IDispatch || iid == ref
-          memcpy(ppv,[pEV].pack('L'),4)
-      else
-         memcpy(ppv,0.chr * 4,4)
-         return E_NOINTERFACE
-      end
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 28
-      memcpy(lpVtbl,pEV,4)
-      memcpy(table,lpVtbl.unpack('L').first,28)
-      table = table.unpack('L*')
-      addRef = Win32::API::Function.new(table[1],'P','L')
-      addRef.call(pEV)
-      S_OK     
-   })
-   @@EVENTSINK_AddRef = Win32::API::Callback.new('L','L') {|pEV|
-      m_cRef = 0.chr * 4
-      memcpy(m_cRef,pEV+4,4)
-      m_cRef = [m_cRef.unpack('L').first+1].pack('L')
-      memcpy(pEV+4,m_cRef,4)
+  @@EVENTSINK_QueryInterface = Win32::API::Callback.new('LLL','L',&lambda { |pEV,riid,ppv|
+    ref = 0.chr * 20
+    memcpy(ref, pEV, 20)
+
+    iid = 0.chr * 16
+    memcpy(iid,riid,16)
+
+    ptr = IEVENTSINKOBJ.new(*ref.unpack('L*'))
+    m_iid = ptr.m_iid
+    ref = 0.chr * 16
+    memcpy(ref, m_iid, 16)
+
+    if iid == WIN32OLE::IID_IUnknown || iid == WIN32OLE::IID_IDispatch || iid == ref
+      memcpy(ppv, [pEV].pack('L'), 4)
+    else
+      memcpy(ppv, 0.chr * 4, 4)
+      return E_NOINTERFACE
+    end
+
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 28
+    memcpy(lpVtbl,pEV,4)
+    memcpy(table,lpVtbl.unpack('L').first,28)
+    table = table.unpack('L*')
+
+    addRef = Win32::API::Function.new(table[1],'P','L')
+    addRef.call(pEV)
+
+    S_OK     
+  })
+
+  @@EVENTSINK_AddRef = Win32::API::Callback.new('L','L') { |pEV|
+    m_cRef = 0.chr * 4
+    memcpy(m_cRef, pEV+4, 4)
+    m_cRef = [m_cRef.unpack('L').first+1].pack('L')
+    memcpy(pEV+4, m_cRef, 4)
+    m_cRef.unpack('L').first
+  }
+
+  @@EVENTSINK_Release = Win32::API::Callback.new('L','L') { |pEV|
+    m_cRef = 0.chr * 4
+    memcpy(m_cRef,pEV+4,4)
+    m_cRef = [m_cRef.unpack('L').first-1].pack('L')
+    memcpy(pEV+4,m_cRef,4)  
+
+    if m_cRef.unpack('L').first != 0
       m_cRef.unpack('L').first
-   }
-   @@EVENTSINK_Release = Win32::API::Callback.new('L','L') {|pEV|
-      m_cRef = 0.chr * 4
-      memcpy(m_cRef,pEV+4,4)
-      m_cRef = [m_cRef.unpack('L').first-1].pack('L')
-      memcpy(pEV+4,m_cRef,4)  
-      if m_cRef.unpack('L').first != 0
-         m_cRef.unpack('L').first
-      else
-         WIN32OLE_EVENT.EVENTSINK_Destructor(pEV)
-         0
-      end
-   }
-   @@EVENTSINK_Invoke = Win32::API::Callback.new('LLPLLLPPP','L',&lambda {|pEventSink,dispid,riid,lcid,wFlags,pdispparams,pvarResult,pexceptinfo,puArgErr|
-      p = 0.chr * 20
-      memcpy(p,pEventSink,20)
-      pEV = IEVENTSINKOBJ.new(*p.unpack('L*'))
-      pTypeInfo = pEV.pTypeInfo
-      m_event_id = pEV.m_event_id
-      obj = @@ary_ole_event[m_event_id]
-      if !obj.is_a?(WIN32OLE_EVENT)
-         return S_OK
-      end
-      ary = obj.events
-      if ary.nil? || !ary.is_a?(Array)
-         return S_OK
-      end
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 32
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,32)
-      table = table.unpack('L*')
-      getNames = Win32::API::Function.new(table[7],'PLPLP','L')
-      bstr = 0.chr * 4
-      count = 0.chr * 4
-      hr = getNames.call(pTypeInfo,dispid,bstr,1,count)
-      if hr != S_OK
-         return S_OK
-      end
-      bstr = bstr.unpack('L').first
-      str = 0.chr * 256
-if pvarResult
-         varResult = 0.chr * 16
-         WIN32OLE.ole_val2variant(result,varResult)
-         memcpy(pvarResult, varResult,16)
-      end
-      wcscpy(str,bstr)
-         SysFreeString(bstr)
-      ev = wide_to_multi(str)
-      event,is_default_handler = WIN32OLE_EVENT.ole_search_event(ary,ev)
-      if event.is_a?(Array)
-         handler = event[0]
-         mid = 'call'
-         is_outarg = event[3]
-      else
-         handler = obj.handler
-         if handler.nil?
-            return S_OK
-         end
-         mid,is_default_handler = ole_search_handler_method(handler,ev)
-      end
-      if handler.nil? || mid.nil?
-         return S_OK
-      end
-      
-      args = []
-      if is_default_handler
-         args.push(ev)
-      end
-      cArgs = 0.chr * 4
-      memcpy(cArgs,pdispparams+8,4)
-      cArgs = cArgs.unpack('L').first
-      for i in 0 ... cArgs
-         rgvarg = 0.chr * 4
-         memcpy(rgvarg,pdispparams,4)
-         pvar = 0.chr * 16
-         memcpy(pvar,rgvarg.unpack('L').first + (cArgs-i-1)*16,16)
-         args.push(WIN32OLE.ole_variant2val(pvar))
-      end
-      outargv = nil
-      if is_outarg 
-         outargv = []
-         args.push(outargv)
-      end
-      
-      arg = [handler,mid,args]
-      begin
-         result = handler.send(mid,*args)
-      rescue Exception => e      
-         raise e
-      end
-      if result.is_a?(Hash)
-         hash2ptr_dispparams(result, pTypeInfo, dispid, pdispparams)
-         result = hash2result(result)
-      elsif is_outarg && outargv.is_a?(Array)
-         ary2ptr_dispparams(outargv, pdispparams)
-      end
-      
-      if pvarResult
-         varResult = 0.chr * 16
-         WIN32OLE.ole_val2variant(result, varResult)
-         memcpy(pvarResult, varResult, 16)
-      end
-      
-      S_OK
-   })
-   @@EVENTSINK_GetIDsOfNames = Win32::API::Callback.new('LPPLLP','L') {|pEventSink,riid,sznames,cNames,lcid,pDispID|
-      pEV = pEventSink
-      p = 0.chr * 4
-      memcpy(p,pEV+12,4)
-      pTypeInfo = p.unpack('L').first
-      if pTypeInfo != 0
-         lpVtbl = 0.chr * 4
-         table = 0.chr * 28
-         memcpy(lpVtbl,pTypeInfo,4)
-         memcpy(table,lpVtbl.unpack('L').first,28)
-         table = table.unpack('L*')
-         getIDsOfNames = Win32::API::Function.new(table[5],'PPPLLP','L')
-         return getIDsOfNames.call(pTypeInfo,szNames,cNames,pDIspID)
-      end
-      DISP_E_UNKNOWNNAME
-   }
-   @@EVENTSINK_GetTypeInfoCount = Win32::API::Callback.new('LP','L') {|pEV,pct|
-      pct[0,4] = 0.chr * 4
-      S_OK
-   }
-   @@EVENTSINK_GetTypeInfo = Win32::API::Callback.new('LLLL','L') {|pEV,info,lcid,pInfo|
-      memcpy(pInfo,0.chr * 4,4)
-      DISP_E_BADINDEX
-   }
-   
-   attr_accessor :events
-   attr_accessor :handler
-   
-   def hash2ptr_dispparams(hash,pTypeInfo,dispid,pdispparams)
-      cArgs = 0.chr * 4
-      memcpy(cArgs,pdispparams+8,4)
-      cArgs = cArgs.unpack('L').first
-      bstrs = 0.chr * 4 * (cArgs+1)
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 32
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,32)
-      table = table.unpack('L*')
-      getNames = Win32::API::Function.new(table[7],'PLPLP','L')
-      len = 0.chr * 4
-      hr = getNames.call(pTypeInfo,dispid,bstrs,cArgs+1,len)
-      len = len.unpack('L').first
-      return if hr != S_OK
-      for i in 0 ... len-1
-         str = 0.chr * 256
-         bstr = bstrs[(i+1)*4,4].unpack('L').first
-         wcscpy(str,bstr)
-         SysFreeString(bstr)
-         key = wide_to_multi(str)
-         val = hash[i]
-         if val.nil?
-            val = hash[key]
-         end
-         if val.nil?
-            val = hash[key.intern]
-            rgvarg = 0.chr * 4
-            memcpy(rgvarg,pdispparams,4)
-            pvar = 0.chr * 16
-            memcpy(pvar,rgvarg.unpack('L').first + (cArgs-i-1)*16,16)
-            ole_val2ptr_variant(val, pvar)
-         end
-      end
-   end
-   
-   def hash2result(hash)
-      ret = hash['return']
-      if ret.nil?
-         ret = hash[:return]
-      end
-      ret
-   end
-   
-   def ary2ptr_dispparams(ary,pdispparams)
-      i = 0
-      cArgs = 0.chr * 4
-      memcpy(cArgs,pdispparams+8,4)
-      cArgs = cArgs.unpack('L').first
-      while i < ary.length && i < cArgs
-         v = ary[i]
-         rgvarg = 0.chr * 4
-         memcpy(rgvarg,pdispparams,4)
-         pvar = 0.chr * 16
-         memcpy(pvar,rgvarg.unpack('L').first + (cArgs-i-1)*16,16)
-         ole_val2ptr_variant(v, pvar)
-         i += 1
-      end
-   end
-   
-   def EVENTSINK_Constructor() 
-      if !@@g_IsEventSinkVtblInitialized
-         @@vtEventSink = IEventSinkVtbl.new
-         @@vtEventSink.QueryInterface=@@EVENTSINK_QueryInterface.address
-         @@vtEventSink.AddRef = @@EVENTSINK_AddRef.address
-         @@vtEventSink.AddRef = @@EVENTSINK_AddRef.address
-         @@vtEventSink.Release = @@EVENTSINK_Release.address
-         @@vtEventSink.Invoke = @@EVENTSINK_Invoke.address
-         @@vtEventSink.GetIDsOfNames = @@EVENTSINK_GetIDsOfNames.address
-         @@vtEventSink.GetTypeInfoCount = @@EVENTSINK_GetTypeInfoCount.address
-         @@vtEventSink.GetTypeInfo = @@EVENTSINK_GetTypeInfo.address
-         @@vtEventSinktbl = @@vtEventSink.to_a.pack('L*')
-         @@g_IsEventSinkVtblInitialized = true        
-      end
-      pEv = IEVENTSINKOBJ.new
-      pEv.lpVtbl = [@@vtEventSinktbl].pack('P').unpack('L').first
-      pEv.m_cRef = 0
-      pEv.m_event_id = 0
-      pEv.pTypeInfo = 0
-      pEv
-   end
+    else
+      WIN32OLE_EVENT.EVENTSINK_Destructor(pEV)
+      0
+    end
+  }
 
-   def self.EVENTSINK_Destructor(pEV)
-      if pEV != 0
-          pEVObj = 0.chr * 20
-         memcpy(pEVObj,pEV,20)
-         pEVObj = IEVENTSINKOBJ.new(*pEVObj.unpack('L*'))
-         WIN32OLE.ole_release(pEVObj.pTypeInfo)
-         pEVObj = nil
-      end
-   end
+  @@EVENTSINK_Invoke = Win32::API::Callback.new('LLPLLLPPP', 'L', &lambda{ |pEventSink,dispid,riid,lcid,wFlags,pdispparams,pvarResult,pexceptinfo,puArgErr|
+    ptr = 0.chr * 20
+    memcpy(ptr, pEventSink, 20)
+    pEV = IEVENTSINKOBJ.new(*ptr.unpack('L*'))
+    pTypeInfo = pEV.pTypeInfo
+    m_event_id = pEV.m_event_id
+    obj = @@ary_ole_event[m_event_id]
 
-   def find_iid(ole,ptif,piid,ppTypeInfo)
-      is_found = false
-      pDispatch = ole.pDispatch
+    if !obj.is_a?(WIN32OLE_EVENT)
+      return S_OK
+    end
+
+    ary = obj.events
+
+    if ary.nil? || !ary.is_a?(Array)
+      return S_OK
+    end
+
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 32
+    memcpy(lpVtbl, pTypeInfo, 4)
+    memcpy(table, lpVtbl.unpack('L').first, 32)
+    table = table.unpack('L*')
+    getNames = Win32::API::Function.new(table[7], 'PLPLP', 'L')
+    bstr = 0.chr * 4
+    count = 0.chr * 4
+    hr = getNames.call(pTypeInfo,dispid,bstr,1,count)
+
+    if hr != S_OK
+      return S_OK
+    end
+
+    bstr = bstr.unpack('L').first
+    str = 0.chr * 256
+    wcscpy(str,bstr)
+    SysFreeString(bstr)
+    ev = wide_to_multi(str)
+    event, is_default_handler = WIN32OLE_EVENT.ole_search_event(ary, ev)
+
+    if event.is_a?(Array)
+      handler = event[0]
+      mid = 'call'
+      is_outarg = event[3]
+    else
+      handler = obj.handler
+      if handler.nil?
+        return S_OK
+      end
+      mid, is_default_handler = ole_search_handler_method(handler, ev)
+    end
+
+    if handler.nil? || mid.nil?
+      return S_OK
+    end
+    
+    args = []
+
+    if is_default_handler
+      args.push(ev)
+    end
+
+    cArgs = 0.chr * 4
+    memcpy(cArgs,pdispparams+8,4)
+    cArgs = cArgs.unpack('L').first
+
+    for i in 0 ... cArgs
+       rgvarg = 0.chr * 4
+       memcpy(rgvarg,pdispparams,4)
+       pvar = 0.chr * 16
+       memcpy(pvar,rgvarg.unpack('L').first + (cArgs-i-1)*16,16)
+       args.push(WIN32OLE.ole_variant2val(pvar))
+    end
+
+    outargv = nil
+
+    if is_outarg 
+      outargv = []
+      args.push(outargv)
+    end
+    
+    arg = [handler,mid,args]
+
+    begin
+      result = handler.send(mid,*args)
+    rescue Exception => err
+      raise err
+    end
+
+    if result.is_a?(Hash)
+      hash2ptr_dispparams(result, pTypeInfo, dispid, pdispparams)
+      result = hash2result(result)
+    elsif is_outarg && outargv.is_a?(Array)
+      ary2ptr_dispparams(outargv, pdispparams)
+    end
+    
+    if pvarResult
+      varResult = 0.chr * 16
+      WIN32OLE.ole_val2variant(result, varResult)
+      memcpy(pvarResult, varResult, 16)
+    end
+    
+    S_OK
+  })
+
+  @@EVENTSINK_GetIDsOfNames = Win32::API::Callback.new('LPPLLP','L'){ |pEventSink,riid,sznames,cNames,lcid,pDispID|
+    pEV = pEventSink
+    ptr = 0.chr * 4
+    memcpy(ptr, pEV+12, 4)
+    pTypeInfo = ptr.unpack('L').first
+
+    if pTypeInfo != 0
       lpVtbl = 0.chr * 4
       table = 0.chr * 28
-      memcpy(lpVtbl,pDispatch,4)
-      memcpy(table,lpVtbl.unpack('L').first,28)
+      memcpy(lpVtbl, pTypeInfo, 4)
+      memcpy(table, lpVtbl.unpack('L').first, 28)
       table = table.unpack('L*')
-      p= 0.chr * 4
-      getTypeInfo = Win32::API::Function.new(table[4],'PLLP','L')
-      hr = getTypeInfo.call(pDispatch,0,WIN32OLE.locale,p)
-      pTypeInfo = p.unpack('L').first
-      return hr if hr != S_OK
-      
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 4 * 22
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getContainingTypeLib = Win32::API::Function.new(table[18],'PPP','L')
-      p = 0.chr * 4
-      index = 0.chr * 4
-      getContainingTypeLib.call(pTypeInfo, p, index)
-      pTypeLib = p.unpack('L').first
-      WIN32OLE.ole_release(pTypeInfo)
-      return hr if hr != S_OK
-      
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 24
-      memcpy(lpVtbl,pTypeLib,4)
-      memcpy(table,lpVtbl.unpack('L').first,24)
-      table = table.unpack('L*')
-      getTypeInfo = Win32::API::Function.new(table[4],'PLP','L')
-      getTypeInfoCount = Win32::API::Function.new(table[3],'P','L')
-      getTypeInfoOfGuid = Win32::API::Function.new(table[5],'PPP','L')
-      getTypeInfoOfGuid = Win32::API::Function.new(table[5],'PPP','L')
-      if ptif.nil?
-         hr = getTypeInfoOfGuid.call(pTypeLib,ppid,ppTypeInfo)
-         WIN32OLE.ole_release(pTypeInfo)
-         return hr
-      end
-      count = getTypeInfoCount.call(pTypeLib)
-      for index in 0 ... count
-         p = 0.chr * 4
-         hr = getTypeInfo.call(pTypeLib,index,p)
-         pTypeInfo = p.unpack('L').first
-         break if hr != S_OK
-         lpVtbl = 0.chr * 4
-         table = 0.chr * 88
-         memcpy(lpVtbl,pTypeInfo,4)
-         memcpy(table,lpVtbl.unpack('L').first,88)
-         table = table.unpack('L*')
-         p = 0.chr * 4
-         getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-         getVarDesc = Win32::API::Function.new(table[6],'PLP','L')
-         getNames = Win32::API::Function.new(table[7],'PLPLP','L')
-         getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
-         getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
-         getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-         getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
-         releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
-         releaseVarDesc = Win32::API::Function.new(table[21],'PP','L')
-         addRef = Win32::API::Function.new(table[1],'P','L')
-         p = 0.chr * 4
-         hr = getTypeAttr.call(pTypeInfo,p)
-         pTypeAttr = p.unpack('L').first
-         if hr != S_OK
-            WIN32OLE.ole_release(pTypeInfo)
-            break
-         end
-         typeAttr = 0.chr * 76
-         memcpy(typeAttr,pTypeAttr,76)
-         typekind = typeAttr[40,4].unpack('L').first
-         cImplTypes = typeAttr[48,2].unpack('S').first
-         if typekind == TKIND_COCLASS
-            for type in 0 ... cImplTypes
-               ref = 0.chr * 4
-               hr = getRefTypeOfImplType.call(pTypeInfo,type,ref)
-               break if hr != S_OK
-               ref = ref.unpack('L').first
-               p = 0.chr * 4
-               hr = getRefTypeInfo.call(pTypeInfo,ref,p)
-               pImplTypeInfo = p.unpack('L').first
-               bstr = 0.chr * 4
-               hr = getDocumentation.call(pImplTypeInfo,-1,bstr,nil,nil,nil)
-               if hr != S_OK
-                  WIN32OLE.ole_release(pTypeInfo)
-                  break
-               end
-               str = 0.chr * 256
-               wcscpy(str,bstr.unpack('L').first)
-               pstr = wide_to_multi(str)
-               if ptif == pstr
-                  p = 0.chr * 4
-                  hr = getTypeAttr.call(pImplTypeInfo,p)
-                  pImplTypeAttr = p.unpack('L').first
-                  if hr == S_OK
-                     is_found = true
-                     memcpy(piid,pImplTypeAttr,16)
-                     if ppTypeInfo
-                        ppTypeInfo[0,4] = [pImplTypeInfo].pack('L')
-                        addRef.call(pImplTypeInfo)
-                     end
-                     releaseTypeAttr.call(pImplTypeInfo,pImplTypeAttr)
-                  end
-               end
-               WIN32OLE.ole_release(pImplTypeInfo)
-               break if is_found || hr != S_OK              
-            end
-         end
-         releaseTypeAttr.call(pTypeInfo, pTypeAttr)
-         WIN32OLE.ole_release(pTypeInfo)
-         break if is_found || hr != S_OK              
-      end
-      WIN32OLE.ole_release(pTypeLib)
-      return [E_NOINTERFACE].pack('L').unpack('l').first if !is_found
-      hr
-   end
+      getIDsOfNames = Win32::API::Function.new(table[5], 'PPPLLP', 'L')
+      return getIDsOfNames.call(pTypeInfo, szNames, cNames, pDIspID)
+    end
+
+    DISP_E_UNKNOWNNAME
+  }
+
+  @@EVENTSINK_GetTypeInfoCount = Win32::API::Callback.new('LP','L'){ |pEV,pct|
+    pct[0,4] = 0.chr * 4
+    S_OK
+  }
+
+  @@EVENTSINK_GetTypeInfo = Win32::API::Callback.new('LLLL','L'){ |pEV,info,lcid,pInfo|
+    memcpy(pInfo,0.chr * 4,4)
+    DISP_E_BADINDEX
+  }
    
-   def find_coclass(pTypeInfo,pTypeAttr,pCOTypeInfo,pCOTypeAttr)
-       found = false
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 4 * 22
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      pTypeInfo = 0.chr * 4
-      getContainingTypeLib = Win32::API::Function.new(table[18],'PPP','L')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-      getVarDesc = Win32::API::Function.new(table[6],'PLP','L')
-      getNames = Win32::API::Function.new(table[7],'PLPLP','L')
-      releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
-      getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
-      getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
-      getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
-      p = 0.chr * 4
-      hr = getContainingTypeLib.call(pTypeInfo, p, nil)
-       pTypeLib = p.unpack('L').first
-       return hr if hr != S_OK
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 56
-      memcpy(lpVtbl,pTypeLib,4)
-      memcpy(table,lpVtbl.unpack('L').first,40)
-      table = table.unpack('L*')
-      getTypeInfoCount = Win32::API::Function.new(table[3],'P','L')
-      getTypeInfo = Win32::API::Function.new(table[4],'PLP','L')
-       count = getTypeInfoCount.call(pTypeLib)
-       for i in 0 ... count
-           break if found
-           p = 0.chr * 4
-           h = getTypeInfo.call(pTypeLib, i, p)
-           pTypeInfo2 = p.unpack('L').first
-           next if hr != S_OK
-           p = 0.chr * 4
-           hr = getTypeAttr.call(pTypeInfo2,p)
-           pTypeAttr2 = p.unpack('L').first
-           if hr != S_OK
-               WIN32OLE.ole_release(pTypeInfo2)
-               next
-           end
-         typeAttr = 0.chr * 76
-         memcpy(typeAttr,pTypeAttr,76)
-         typekind = typeAttr[40,4].unpack('L').first
-         cImplTypes = typeAttr[48,2].unpack('S').first
-           if typekind != TKIND_COCLASS
-               releaseTypeAttr.call(pTypeInfo2, pTypeAttr2)
-               WIN32OLE.ole_release(pTypeInfo2)
-               next
-           end  
-           for j in 0 ... cImplTypes
-               break if found
-               flags = 0.chr * 4
-               hr = getImplTypeFlags.call(pTypeInfo2, j, flags)
-               next if hr != S_OK
-               next if (flags.unpack('L').first & IMPLTYPEFLAG_FDEFAULT) == 0
-               href = 0.chr * 4
-               hr = getRefTypeOfImplType.call(pTypeInfo2, j, href)
-               next if hr != S_OK
-               href = href.unpack('L').first
-               p = 0.chr * 4
-               hr = getRefTypeInfo.call(pTypeInfo2, href, p)
-               next if hr != S_OK
-               pRefTypeInfo = p.unpack('L').first
-               p = 0.chr * 4
-              hr = getTypeAttr.call(pRefTypeInfo,p)
-              pRefTypeAttr = p.unpack('L').first
-               if hr != S_OK
-                   WIN32OLE.ole_release(pRefTypeInfo)
-                   next
-               end
-            guid1 = 0.chr * 16
-            memcpy(typeAttr,pTypeAttr,76)
-               guid2 = 0.chr * 16
-            memcpy(typeAttr,pRefTypeAttr,76)
-               if guid1 == guid2
-                   found = true
-               end
-           end
-           if !found
-               releaseTypeAttr.call(pTypeInfo2, pTypeAttr2)
-               WIN32OLE.ole_release(pTypeInfo2)
-           end
-       end
-       WIN32OLE.ole_release(pTypeLib)
-       if found
-           pCOTypeInfo[0,4] = [pTypeInfo2].pack('L')
-           pCOTypeAttr[0,4] = [pTypeAttr2].pack('L')
-           hr = S_OK
-       else
-           hr = [E_NOINTERFACE].pack('L').unpack('l').first
-       end
-       hr
-   end
+  attr_accessor :events
+  attr_accessor :handler
+   
+  def hash2ptr_dispparams(hash,pTypeInfo,dispid,pdispparams)
+    cArgs = 0.chr * 4
+    memcpy(cArgs,pdispparams+8,4)
+    cArgs = cArgs.unpack('L').first
+    bstrs = 0.chr * 4 * (cArgs+1)
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 32
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,32)
+    table = table.unpack('L*')
+    getNames = Win32::API::Function.new(table[7],'PLPLP','L')
+    len = 0.chr * 4
+    hr = getNames.call(pTypeInfo,dispid,bstrs,cArgs+1,len)
+    len = len.unpack('L').first
+
+    return if hr != S_OK
+
+    for i in 0 ... len-1
+      str = 0.chr * 256
+      bstr = bstrs[(i+1)*4,4].unpack('L').first
+      wcscpy(str,bstr)
+      SysFreeString(bstr)
+      key = wide_to_multi(str)
+      val = hash[i]
+      if val.nil?
+        val = hash[key]
+      end
+      if val.nil?
+        val = hash[key.intern]
+        rgvarg = 0.chr * 4
+        memcpy(rgvarg,pdispparams,4)
+        pvar = 0.chr * 16
+        memcpy(pvar,rgvarg.unpack('L').first + (cArgs-i-1)*16,16)
+        ole_val2ptr_variant(val, pvar)
+      end
+    end
+  end
+   
+  def hash2result(hash)
+    ret = hash['return']
+    if ret.nil?
+      ret = hash[:return]
+    end
+    ret
+  end
+   
+  def ary2ptr_dispparams(ary,pdispparams)
+    i = 0
+    cArgs = 0.chr * 4
+    memcpy(cArgs,pdispparams+8,4)
+    cArgs = cArgs.unpack('L').first
+
+    while i < ary.length && i < cArgs
+      v = ary[i]
+      rgvarg = 0.chr * 4
+      memcpy(rgvarg,pdispparams,4)
+      pvar = 0.chr * 16
+      memcpy(pvar,rgvarg.unpack('L').first + (cArgs-i-1)*16,16)
+      ole_val2ptr_variant(v, pvar)
+      i += 1
+    end
+  end
+   
+  def EVENTSINK_Constructor() 
+    if !@@g_IsEventSinkVtblInitialized
+      @@vtEventSink = IEventSinkVtbl.new
+      @@vtEventSink.QueryInterface=@@EVENTSINK_QueryInterface.address
+      @@vtEventSink.AddRef = @@EVENTSINK_AddRef.address
+      @@vtEventSink.AddRef = @@EVENTSINK_AddRef.address
+      @@vtEventSink.Release = @@EVENTSINK_Release.address
+      @@vtEventSink.Invoke = @@EVENTSINK_Invoke.address
+      @@vtEventSink.GetIDsOfNames = @@EVENTSINK_GetIDsOfNames.address
+      @@vtEventSink.GetTypeInfoCount = @@EVENTSINK_GetTypeInfoCount.address
+      @@vtEventSink.GetTypeInfo = @@EVENTSINK_GetTypeInfo.address
+      @@vtEventSinktbl = @@vtEventSink.to_a.pack('L*')
+      @@g_IsEventSinkVtblInitialized = true        
+    end
+
+    pEv = IEVENTSINKOBJ.new
+    pEv.lpVtbl = [@@vtEventSinktbl].pack('P').unpack('L').first
+    pEv.m_cRef = 0
+    pEv.m_event_id = 0
+    pEv.pTypeInfo = 0
+    pEv
+  end
+
+  def self.EVENTSINK_Destructor(pEV)
+    if pEV != 0
+      pEVObj = 0.chr * 20
+      memcpy(pEVObj,pEV,20)
+      pEVObj = IEVENTSINKOBJ.new(*pEVObj.unpack('L*'))
+      WIN32OLE.ole_release(pEVObj.pTypeInfo)
+      pEVObj = nil
+    end
+  end
+
+  def find_iid(ole,ptif,piid,ppTypeInfo)
+    is_found = false
+    pDispatch = ole.pDispatch
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 28
+    memcpy(lpVtbl, pDispatch, 4)
+    memcpy(table, lpVtbl.unpack('L').first, 28)
+    table = table.unpack('L*')
+    ptr = 0.chr * 4
+    getTypeInfo = Win32::API::Function.new(table[4],'PLLP','L')
+    hr = getTypeInfo.call(pDispatch, 0, WIN32OLE.locale, ptr)
+    pTypeInfo = ptr.unpack('L').first
+    return hr if hr != S_OK
       
-   def find_default_source_from_typeinfo(pTypeInfo,pTypeAttr,ppTypeInfo)
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 4 * 22
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+
+    getContainingTypeLib = Win32::API::Function.new(table[18],'PPP','L')
+    ptr = 0.chr * 4
+    index = 0.chr * 4
+    getContainingTypeLib.call(pTypeInfo, ptr, index)
+    pTypeLib = ptr.unpack('L').first
+    WIN32OLE.ole_release(pTypeInfo)
+    return hr if hr != S_OK
+      
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 24
+    memcpy(lpVtbl,pTypeLib,4)
+    memcpy(table,lpVtbl.unpack('L').first,24)
+    table = table.unpack('L*')
+    getTypeInfo = Win32::API::Function.new(table[4],'PLP','L')
+    getTypeInfoCount = Win32::API::Function.new(table[3],'P','L')
+    getTypeInfoOfGuid = Win32::API::Function.new(table[5],'PPP','L')
+    getTypeInfoOfGuid = Win32::API::Function.new(table[5],'PPP','L')
+
+    if ptif.nil?
+      hr = getTypeInfoOfGuid.call(pTypeLib,ppid,ppTypeInfo)
+      WIN32OLE.ole_release(pTypeInfo)
+      return hr
+    end
+
+    count = getTypeInfoCount.call(pTypeLib)
+
+    for index in 0 ... count
+      ptr = 0.chr * 4
+      hr = getTypeInfo.call(pTypeLib, index, ptr)
+      pTypeInfo = ptr.unpack('L').first
+      break if hr != S_OK
+      lpVtbl = 0.chr * 4
+      table = 0.chr * 88
+      memcpy(lpVtbl, pTypeInfo, 4)
+      memcpy(table, lpVtbl.unpack('L').first, 88)
+      table = table.unpack('L*')
+
+      getTypeAttr = Win32::API::Function.new(table[3], 'PP','L')
+      getVarDesc = Win32::API::Function.new(table[6], 'PLP','L')
+      getNames = Win32::API::Function.new(table[7], 'PLPLP','L')
+      getRefTypeOfImplType = Win32::API::Function.new(table[8], 'PLP','L')
+      getRefTypeInfo = Win32::API::Function.new(table[14], 'PLP','L')
+      getFuncDesc = Win32::API::Function.new(table[5], 'PLP','L')
+      getDocumentation = Win32::API::Function.new(table[12], 'PLPPPP','L')
+      releaseTypeAttr = Win32::API::Function.new(table[19], 'PP','L')
+      releaseVarDesc = Win32::API::Function.new(table[21], 'PP','L')
+      addRef = Win32::API::Function.new(table[1],'P','L')
+
+      ptr = 0.chr * 4
+      hr = getTypeAttr.call(pTypeInfo, ptr)
+      pTypeAttr = ptr.unpack('L').first
+
+      if hr != S_OK
+        WIN32OLE.ole_release(pTypeInfo)
+        break
+      end
+
       typeAttr = 0.chr * 76
       memcpy(typeAttr,pTypeAttr,76)
       typekind = typeAttr[40,4].unpack('L').first
       cImplTypes = typeAttr[48,2].unpack('S').first
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 80
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,80)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-      getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
-      getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
-      getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
-      releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
-      hr = E_NOINTERFACE
-      for i in 0 ... cImplTypes
-         flags = 0.chr * 4
-         hr = getImplTypeFlags.call(pTypeInfo, i, flags)
-         next if hr != S_OK
-         flags = flags.unpack('L').first
-         
-         if (flgas & IMPLTYPEFLAG_FDEFAULT) != 0 && (flgas & IMPLTYPEFLAG_FSOURCE) != 0 
-            ref = 0.chr * 4
-            hr = getRefTypeOfImplType.call(pTypeInfo, i, ref)
-            next if hr != S_OK
-            hRefType = ref.unpack('L').first
-            hr = getRefTypeInfo.call(pTypeInfo,hRefType,ppTypeInfo)
-            break if hr == S_OK
-         end
+
+      if typekind == TKIND_COCLASS
+        for type in 0 ... cImplTypes
+          ref = 0.chr * 4
+          hr = getRefTypeOfImplType.call(pTypeInfo,type,ref)
+          break if hr != S_OK
+          ref = ref.unpack('L').first
+          p = 0.chr * 4
+          hr = getRefTypeInfo.call(pTypeInfo,ref,p)
+          pImplTypeInfo = p.unpack('L').first
+          bstr = 0.chr * 4
+          hr = getDocumentation.call(pImplTypeInfo,-1,bstr,nil,nil,nil)
+
+          if hr != S_OK
+            WIN32OLE.ole_release(pTypeInfo)
+            break
+          end
+
+          str = 0.chr * 256
+          wcscpy(str,bstr.unpack('L').first)
+          pstr = wide_to_multi(str)
+
+          if ptif == pstr
+            p = 0.chr * 4
+            hr = getTypeAttr.call(pImplTypeInfo,p)
+            pImplTypeAttr = p.unpack('L').first
+            if hr == S_OK
+              is_found = true
+              memcpy(piid,pImplTypeAttr,16)
+              if ppTypeInfo
+                ppTypeInfo[0,4] = [pImplTypeInfo].pack('L')
+                addRef.call(pImplTypeInfo)
+              end
+              releaseTypeAttr.call(pImplTypeInfo,pImplTypeAttr)
+            end
+          end
+          WIN32OLE.ole_release(pImplTypeInfo)
+          break if is_found || hr != S_OK              
+        end
       end
-      hr
-   end
+      releaseTypeAttr.call(pTypeInfo, pTypeAttr)
+      WIN32OLE.ole_release(pTypeInfo)
+      break if is_found || hr != S_OK              
+    end
+
+    WIN32OLE.ole_release(pTypeLib)
+    return [E_NOINTERFACE].pack('L').unpack('l').first if !is_found
+    hr
+  end
+   
+  def find_coclass(pTypeInfo,pTypeAttr,pCOTypeInfo,pCOTypeAttr)
+    found = false
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 4 * 22
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+    pTypeInfo = 0.chr * 4
+
+    getContainingTypeLib = Win32::API::Function.new(table[18],'PPP','L')
+    getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getVarDesc = Win32::API::Function.new(table[6],'PLP','L')
+    getNames = Win32::API::Function.new(table[7],'PLPLP','L')
+    releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
+    getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
+    getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
+    getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
+
+    p = 0.chr * 4
+    hr = getContainingTypeLib.call(pTypeInfo, p, nil)
+    pTypeLib = p.unpack('L').first
+    return hr if hr != S_OK
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 56
+    memcpy(lpVtbl,pTypeLib,4)
+    memcpy(table,lpVtbl.unpack('L').first,40)
+    table = table.unpack('L*')
+    getTypeInfoCount = Win32::API::Function.new(table[3],'P','L')
+    getTypeInfo = Win32::API::Function.new(table[4],'PLP','L')
+
+    count = getTypeInfoCount.call(pTypeLib)
+    for i in 0 ... count
+      break if found
+
+      p = 0.chr * 4
+      h = getTypeInfo.call(pTypeLib, i, p)
+      pTypeInfo2 = p.unpack('L').first
+
+      next if hr != S_OK
+
+      p = 0.chr * 4
+      hr = getTypeAttr.call(pTypeInfo2,p)
+      pTypeAttr2 = p.unpack('L').first
+
+      if hr != S_OK
+        WIN32OLE.ole_release(pTypeInfo2)
+        next
+      end
+
+      typeAttr = 0.chr * 76
+      memcpy(typeAttr,pTypeAttr,76)
+      typekind = typeAttr[40,4].unpack('L').first
+      cImplTypes = typeAttr[48,2].unpack('S').first
+
+      if typekind != TKIND_COCLASS
+        releaseTypeAttr.call(pTypeInfo2, pTypeAttr2)
+        WIN32OLE.ole_release(pTypeInfo2)
+        next
+      end  
+
+      for j in 0 ... cImplTypes
+        break if found
+        flags = 0.chr * 4
+        hr = getImplTypeFlags.call(pTypeInfo2, j, flags)
+        next if hr != S_OK
+        next if (flags.unpack('L').first & IMPLTYPEFLAG_FDEFAULT) == 0
+        href = 0.chr * 4
+        hr = getRefTypeOfImplType.call(pTypeInfo2, j, href)
+        next if hr != S_OK
+        href = href.unpack('L').first
+        p = 0.chr * 4
+        hr = getRefTypeInfo.call(pTypeInfo2, href, p)
+        next if hr != S_OK
+        pRefTypeInfo = p.unpack('L').first
+        p = 0.chr * 4
+        hr = getTypeAttr.call(pRefTypeInfo,p)
+        pRefTypeAttr = p.unpack('L').first
+
+        if hr != S_OK
+          WIN32OLE.ole_release(pRefTypeInfo)
+          next
+        end
+
+        guid1 = 0.chr * 16
+        memcpy(typeAttr,pTypeAttr,76)
+        guid2 = 0.chr * 16
+        memcpy(typeAttr,pRefTypeAttr,76)
+
+        if guid1 == guid2
+          found = true
+        end
+      end
+
+      if !found
+        releaseTypeAttr.call(pTypeInfo2, pTypeAttr2)
+        WIN32OLE.ole_release(pTypeInfo2)
+      end
+    end
+
+    WIN32OLE.ole_release(pTypeLib)
+
+    if found
+      pCOTypeInfo[0,4] = [pTypeInfo2].pack('L')
+      pCOTypeAttr[0,4] = [pTypeAttr2].pack('L')
+      hr = S_OK
+    else
+      hr = [E_NOINTERFACE].pack('L').unpack('l').first
+    end
+
+    hr
+  end
+      
+  def find_default_source_from_typeinfo(pTypeInfo,pTypeAttr,ppTypeInfo)
+    typeAttr = 0.chr * 76
+    memcpy(typeAttr,pTypeAttr,76)
+    typekind = typeAttr[40,4].unpack('L').first
+    cImplTypes = typeAttr[48,2].unpack('S').first
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 80
+
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,80)
+
+    table = table.unpack('L*')
+    getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
+    getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
+    getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
+    releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
+    hr = E_NOINTERFACE
+
+    for i in 0 ... cImplTypes
+      flags = 0.chr * 4
+      hr = getImplTypeFlags.call(pTypeInfo, i, flags)
+      next if hr != S_OK
+      flags = flags.unpack('L').first
+       
+      if (flgas & IMPLTYPEFLAG_FDEFAULT) != 0 && (flgas & IMPLTYPEFLAG_FSOURCE) != 0 
+        ref = 0.chr * 4
+        hr = getRefTypeOfImplType.call(pTypeInfo, i, ref)
+        next if hr != S_OK
+        hRefType = ref.unpack('L').first
+        hr = getRefTypeInfo.call(pTypeInfo,hRefType,ppTypeInfo)
+        break if hr == S_OK
+      end
+    end
+    hr
+  end
    
    def find_default_source(ole,piid,ppTypeInfo)
       pDispatch = ole.pDispatch
@@ -4955,234 +5016,248 @@ if pvarResult
       hr
    end
    
-   def ev_advise(ole,itf)
-      if !ole.is_a?(WIN32OLE)
-         raise TypeError, "1st parameter must be WIN32OLE object"
+  def ev_advise(ole, itf)
+    if !ole.is_a?(WIN32OLE)
+      raise TypeError, "1st parameter must be WIN32OLE object"
+    end
+
+    if itf
+      if $SAFE > 0 && itf.tainted
+        raise SecurityError, "Insecure Event Creation - #{itf}"
       end
-      if itf
-         if $SAFE > 0 && itf.tainted
-            raise SecurityError, "Insecure Event Creation - #{itf}"
-         end
-         unless itf.is_a?(String)
-            raise TypeError, "2nd parameter must be String"          
-         end
-         p = 0.chr * 4
-         iid = 0.chr * 16
-         hr = find_iid(ole,itf,iid,p)
-         pTypeInfo = p.unpack('L').first
-            lpVtbl = 0.chr * 4
-            memcpy(lpVtbl,pTypeInfo,4)
-      else
-         p = 0.chr * 4
-         hr = find_default_source(ole, iid, p)
-         pTypeInfo = p.unpack('L').first
+
+      unless itf.is_a?(String)
+        raise TypeError, "2nd parameter must be String"          
       end
-      if hr != S_OK
-         raise RuntimeError, "interface not found"
-      end
+
+      p = 0.chr * 4
+      iid = 0.chr * 16
+      hr = find_iid(ole,itf,iid,p)
+      pTypeInfo = p.unpack('L').first
+      lpVtbl = 0.chr * 4
+      memcpy(lpVtbl,pTypeInfo,4)
+    else
+      p = 0.chr * 4
+      hr = find_default_source(ole, iid, p)
+      pTypeInfo = p.unpack('L').first
+    end
+
+    if hr != S_OK
+      raise RuntimeError, "interface not found"
+    end
       
-      pDipatch = ole.pDispatch
-        lpVtbl = 0.chr * 4
-        memcpy(lpVtbl,pDipatch,4)
-        table = 0.chr * 28
-        memcpy(table,lpVtbl.unpack('L').first,28)
-        table = table.unpack('L*')
-        queryInterface = Win32::API::Function.new(table[0],'PPP','L')
-      p = 0.chr * 4
-      hr = queryInterface.call(pDipatch,WIN32OLE::IID_IConnectionPointContainer,p)
-      if hr != S_OK
-         WIN32OLE.ole_release(pTypeInfo)
-         raise RuntimeError,"failed to query IConnectionPointContainer"
-      end
-      pContainer = p.unpack('L').first
-        lpVtbl = 0.chr * 4
-        table = 0.chr * 28
-        memcpy(lpVtbl,pContainer,4)
-        memcpy(table,lpVtbl.unpack('L').first,28)
-        table = table.unpack('L*')
-        findConnectionPoint = Win32::API::Function.new(table[4],'PPP','L')
-      p = 0.chr * 4
-      hr = findConnectionPoint.call(pContainer,iid,p)
-      WIN32OLE.ole_release(pContainer)
-      pConnectionPoint = p.unpack('L').first
-      if hr != S_OK
-         WIN32OLE.ole_release(pTypeInfo)
-         raise RuntimeError, "failed to query IConnectionPoint"
-      end
-      pIEV = EVENTSINK_Constructor()
-      pIEV.m_iid = [iid].pack('P').unpack('L').first
-      @pIEV = pIEV.to_a.pack('L*')
-        lpVtbl = 0.chr * 4
-        table = 0.chr * 28
-        memcpy(lpVtbl,pConnectionPoint,4)
-        memcpy(table,lpVtbl.unpack('L').first,28)
-        table = table.unpack('L*')
-        advise = Win32::API::Function.new(table[5],'LLP','L')
-      dwCookie = 0.chr * 4
-      hr = advise.call(pConnectionPoint,[@pIEV].pack('P').unpack('L').first,dwCookie)     
-      dwCookie = dwCookie.unpack('L').first
-      if hr != S_OK
-         raise RuntimeError, "Advise Error"
-      end
-        pIEV = IEVENTSINKOBJ.new(*@pIEV.unpack('L*'))
-      pIEV.m_event_id = @@ary_ole_event.length
-      pIEV.pTypeInfo = pTypeInfo
-      @dwCookie = dwCookie
-      @pConnectionPoint = pConnectionPoint
-      @event_id = pIEV.m_event_id
-      memcpy([@pIEV].pack('P').unpack('L').first,pIEV.to_a.pack('L*'),20)
+    pDipatch = ole.pDispatch
+    lpVtbl = 0.chr * 4
+    memcpy(lpVtbl,pDipatch,4)
+    table = 0.chr * 28
+    memcpy(table,lpVtbl.unpack('L').first,28)
+    table = table.unpack('L*')
+    queryInterface = Win32::API::Function.new(table[0],'PPP','L')
+    ptr = 0.chr * 4
+    hr = queryInterface.call(pDipatch, WIN32OLE::IID_IConnectionPointContainer, ptr)
 
-      self     
-   end
-   
-   def self.ole_msg_loop
-      msg = 0.chr * 100
-      while(PeekMessage(msg,nil,0,0,1)) 
-         TranslateMessage(msg)
-         DispatchMessage(msg)
-      end
-   end
-   
-   def self.message_loop
-      ole_msg_loop()
-      nil
-   end
+    if hr != S_OK
+      WIN32OLE.ole_release(pTypeInfo)
+      raise RuntimeError,"failed to query IConnectionPointContainer"
+    end
 
-   def initialize(ole,event=nil)
+    pContainer = p.unpack('L').first
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 28
+    memcpy(lpVtbl, pContainer, 4)
+    memcpy(table, lpVtbl.unpack('L').first, 28)
+    table = table.unpack('L*')
+    findConnectionPoint = Win32::API::Function.new(table[4],'PPP','L')
+
+    ptr = 0.chr * 4
+    hr = findConnectionPoint.call(pContainer, iid, ptr)
+    WIN32OLE.ole_release(pContainer)
+    pConnectionPoint = ptr.unpack('L').first
+
+    if hr != S_OK
+      WIN32OLE.ole_release(pTypeInfo)
+      raise RuntimeError, "failed to query IConnectionPoint"
+    end
+
+    pIEV = EVENTSINK_Constructor()
+    pIEV.m_iid = [iid].pack('P').unpack('L').first
+    @pIEV = pIEV.to_a.pack('L*')
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 28
+
+    memcpy(lpVtbl, pConnectionPoint, 4)
+    memcpy(table, lpVtbl.unpack('L').first, 28)
+
+    table = table.unpack('L*')
+    advise = Win32::API::Function.new(table[5],'LLP','L')
+    dwCookie = 0.chr * 4
+    hr = advise.call(pConnectionPoint, [@pIEV].pack('P').unpack('L').first, dwCookie)
+    dwCookie = dwCookie.unpack('L').first
+
+    if hr != S_OK
+      raise RuntimeError, "Advise Error"
+    end
+
+    pIEV = IEVENTSINKOBJ.new(*@pIEV.unpack('L*'))
+    pIEV.m_event_id = @@ary_ole_event.length
+    pIEV.pTypeInfo = pTypeInfo
+    @dwCookie = dwCookie
+    @pConnectionPoint = pConnectionPoint
+    @event_id = pIEV.m_event_id
+    memcpy([@pIEV].pack('P').unpack('L').first, pIEV.to_a.pack('L*'), 20)
+
+    self     
+  end
    
-       if Win32::API::VERSION<='1.4.0'
-           raise WIN32OLERuntimeError,'win32-api version 1.4.1 or higher required'
-       end
-      @dwCookie = 0
+  def self.ole_msg_loop
+    msg = 0.chr * 100
+    while(PeekMessage(msg,nil,0,0,1)) 
+      TranslateMessage(msg)
+      DispatchMessage(msg)
+    end
+  end
+   
+  def self.message_loop
+    ole_msg_loop()
+    nil
+  end
+
+  def initialize(ole,event=nil)
+    if Win32::API::VERSION<='1.4.0'
+      raise WIN32OLERuntimeError,'win32-api version 1.4.1 or higher required'
+    end
+
+    @dwCookie = 0
+    @pConnectionPoint = nil
+    @event_id = 0
+    ev_advise(ole,event)
+    @@ary_ole_event.push(self)
+    @events = []
+    @handler = nil
+    self
+  end
+
+  def ole_search_event_at(ary,ev)
+    ret = -1
+    for i in 0 ... ary.length
+      event = ary[i]
+      event_name = event[1]
+      if event_name.nil? && ev.nil?
+        ret = i
+        break
+      elsif ev.is_a?(String) && event_name.is_a?(String) && ev == event_name
+        ret = i
+        break
+      end         
+    end
+    ret
+  end
+
+  def self.ole_search_event(ary,ev)
+    is_default = false
+    for i in 0 ... ary.length
+      event = ary[i]
+      event_name = event[1]
+      if event_name.nil? 
+        is_default = true
+        def_event = event
+      elsif ev == event_name
+        is_default = false
+        return [event,is_default]
+      end         
+    end
+    [def_event,is_default]     
+  end
+   
+  def ole_search_handler_method(handler,ev) 
+    is_default_handler = false
+    mid = "on#{ev}"
+    if handler.respond_to?("on#{ev}")
+      return mid,is_default_handler
+    end
+    mid = "method_missing"
+    if handler.respond_to?(mid)
+      is_default_handler = true
+      return [mid,is_default_handler]
+    end
+    [nil,is_default_handler]
+  end
+   
+  def ole_delete_event(ary,ev)
+    at = ole_search_event_at(ary, ev)
+    if at>=0
+      ary.delete_at(at)
+    end
+  end
+   
+  def add_event_call_back(event,data)
+    events = @events
+    if events.nil? || !events.is_a?(Array)
+      events = []
+      @events = events
+    end
+    ole_delete_event(events,event)
+    events.push(data)
+  end
+   
+  def ev_on_event(args,is_ary_arg,&blk)
+    if @pConnectionPoint.nil?
+      raise WIN32OLERuntimeError, "IConnectionPoint not found. You must call advise at first."
+    end
+    event = args.shift
+    if event
+      if !event.is_a?(String) && event.is_a?(Symbol)
+        raise TypeError, "wrong argument type (expected String or Symbol)"
+      end
+      if event.is_a?(Symbol)
+        event = event.to_s
+      end
+    end
+    data = [blk,event,args,is_ary_arg]
+    add_event_call_back(event,data)
+    nil
+  end
+   
+  def on_event(*args,&blk)
+    ev_on_event(args,false,&blk)
+  end
+
+  def on_event_with_outargs(*args,&blk)
+    ev_on_event(args,true,&blk)
+  end
+
+  def off_event(event=nil)
+    if event
+      if !event.is_a?(String) && event.is_a?(Symbol)
+        raise TypeError, "wrong argument type (expected String or Symbol)"
+      end
+      if event.is_a?(Symbol)
+        event = event.to_s
+      end
+    end
+
+    events = @events
+    return nil if events.nil?
+    ole_delete_event(events, event)
+    nil
+  end
+
+  def unadvise
+    if @pConnectionPoint
+      WIN32OLE_EVENT.ole_msg_loop()
+      @@ary_ole_event[@event_id]=nil
+      lpVtbl = 0.chr * 4
+      table = 0.chr * 28
+      memcpy(lpVtbl,@pConnectionPoint,4)
+      memcpy(table,lpVtbl.unpack('L').first,28)
+      table = table.unpack('L*')
+      unadvise = Win32::API::Function.new(table[6],'LP','L')
+      unadvise.call(@pConnectionPoint,@dwCookie)
+      WIN32OLE.ole_release(@pConnectionPoint)
       @pConnectionPoint = nil
-      @event_id = 0
-      ev_advise(ole,event)
-      @@ary_ole_event.push(self)
-      @events = []
-      @handler = nil
-      self
-   end
-
-   def ole_search_event_at(ary,ev)
-      ret = -1
-      for i in 0 ... ary.length
-         event = ary[i]
-         event_name = event[1]
-         if event_name.nil? && ev.nil?
-            ret = i
-            break
-         elsif ev.is_a?(String) && event_name.is_a?(String) && ev == event_name
-            ret = i
-            break
-         end         
-      end
-      ret
-   end
-
-   def self.ole_search_event(ary,ev)
-      is_default = false
-      for i in 0 ... ary.length
-         event = ary[i]
-         event_name = event[1]
-         if event_name.nil? 
-            is_default = true
-            def_event = event
-         elsif ev == event_name
-            is_default = false
-            return [event,is_default]
-         end         
-      end
-      [def_event,is_default]     
-   end
-   
-   def ole_search_handler_method(handler,ev) 
-      is_default_handler = false
-      mid = "on#{ev}"
-      if handler.respond_to?("on#{ev}")
-         return mid,is_default_handler
-      end
-      mid = "method_missing"
-      if handler.respond_to?(mid)
-         is_default_handler = true
-         return [mid,is_default_handler]
-      end
-      [nil,is_default_handler]
-   end
-   
-   def ole_delete_event(ary,ev)
-      at = ole_search_event_at(ary, ev)
-      if at>=0
-         ary.delete_at(at)
-      end
-   end
-   
-   def add_event_call_back(event,data)
-      events = @events
-      if events.nil? || !events.is_a?(Array)
-         events = []
-         @events = events
-      end
-      ole_delete_event(events,event)
-      events.push(data)
-   end
-   
-   def ev_on_event(args,is_ary_arg,&blk)
-      if @pConnectionPoint.nil?
-         raise WIN32OLERuntimeError, "IConnectionPoint not found. You must call advise at first."
-      end
-      event = args.shift
-      if event
-         if !event.is_a?(String) && event.is_a?(Symbol)
-            raise TypeError, "wrong argument type (expected String or Symbol)"
-         end
-         if event.is_a?(Symbol)
-            event = event.to_s
-         end
-      end
-      data = [blk,event,args,is_ary_arg]
-      add_event_call_back(event,data)
-      nil
-   end
-   
-   def on_event(*args,&blk)
-      ev_on_event(args,false,&blk)
-   end
-
-   def on_event_with_outargs(*args,&blk)
-      ev_on_event(args,true,&blk)
-   end
-
-   def off_event(event=nil)
-      if event
-         if !event.is_a?(String) && event.is_a?(Symbol)
-            raise TypeError, "wrong argument type (expected String or Symbol)"
-         end
-         if event.is_a?(Symbol)
-            event = event.to_s
-         end
-      end
-      events = @events
-      return nil if events.nil?
-      ole_delete_event(events, event)
-      nil
-   end
-
-   def unadvise
-      if @pConnectionPoint
-         WIN32OLE_EVENT.ole_msg_loop()
-         @@ary_ole_event[@event_id]=nil
-         lpVtbl = 0.chr * 4
-         table = 0.chr * 28
-         memcpy(lpVtbl,@pConnectionPoint,4)
-         memcpy(table,lpVtbl.unpack('L').first,28)
-         table = table.unpack('L*')
-         unadvise = Win32::API::Function.new(table[6],'LP','L')
-         unadvise.call(@pConnectionPoint,@dwCookie)
-         WIN32OLE.ole_release(@pConnectionPoint)
-         @pConnectionPoint = nil
-      end
-      nil
-   end
+    end
+    nil
+  end
 end
 
 class WIN32OLE_VARIANT
