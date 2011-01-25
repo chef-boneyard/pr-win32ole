@@ -1,7 +1,10 @@
 require 'rake'
+require 'rake/clean'
 require 'rake/testtask'
 require 'rbconfig'
 include Config
+
+CLEAN.include("**/*.gem", "**/*.rbc")
 
 desc 'Install the pr-win32ole library'
 task :install do
@@ -15,11 +18,6 @@ task :install_as_win32ole do
   install_dir = File.join(CONFIG['sitelibdir'], 'pr')
   Dir.mkdir(install_dir) unless File.exists?(install_dir)
   FileUtils.cp('lib/pr/win32ole.rb', CONFIG['sitelibdir'], :verbose => true)
-end
-
-desc 'Cleanup any .gem files'
-task :clean do
-  Dir['*.gem'].each{ |f| File.delete(f) }
 end
 
 namespace 'gem' do
@@ -40,3 +38,5 @@ Rake::TestTask.new do |t|
   t.warning = true
   t.verbose = true   
 end
+
+task :default => :test
