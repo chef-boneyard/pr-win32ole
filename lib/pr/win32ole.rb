@@ -4006,118 +4006,136 @@ class WIN32OLE_METHOD
       ole_method_visible(@pTypeInfo,@index)
    end
 
-   def ole_method_event(pTypeInfo,method_index,method_name)
-       event = false
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-      getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
-      getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
-      getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
-      getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-      hr = getTypeAttr.call(pTypeInfo,p)
-      pTypeAttr = p.unpack('L').first
-      return event if hr != S_OK
-      typeAttr = 0.chr * 76
-      memcpy(typeAttr,pTypeAttr,76)
-      if typeAttr[40,4].unpack('L').first != TKIND_COCLASS
-          releaseTypeAttr.call(pTypeInfo, pTypeAttr)
-          return event
-      end
-      for i in 0 ... typeAttr[48,2].unpack('S').first
-         flags = 0.chr * 4
-         hr = getImplTypeFlags.call(pTypeInfo, i,flags)
-         next if hr != S_OK
-            if (flags.unpack('L').first & IMPLTYPEFLAG_FSOURCE) != 0
-                href = 0.chr * 4
-                hr = getRefTypeOfImplType.call(pTypeInfo,i,href)
-                next if hr != S_OK
-                href = href.unpack('L').first
-                p = 0.chr * 4
-                hr = getRefTypeInfo.call(pTypeInfo,href,p)
-                next if hr != S_OK
-                pRefTypeInfo = p.unpack('L').first
-                p = 0.chr * 4
-                hr = getFuncDesc.call(pRefTypeInfo,method_index,p)
-                if hr != S_OK
-                    WIN32OLE.ole_release(pRefTypeInfo)
-                    next
-                end
-                pFuncDesc = p.unpack('L').first
-            funcDesc = 0.chr * 52
-            memcpy(funcDesc,pFuncDesc,52)
-            memid = funcDesc[0,4].unpack('L').first
-            bstr = 0.chr * 4
-                hr = getDocumentation.call(pRefTypeInfo,memid,bstr,nil,nil,nil)
-                if hr != S_OK
-                    releaseFuncDesc.call(pRefTypeInfo, pFuncDesc)
-                    WIN32OLE.ole_release(pRefTypeInfo)
-                    next
-                end
-                str = 0.chr * 256
-                wcscpy(str,bstr.unpack('L').first)
-                name = wide_to_multi(str)
-                releaseFuncDesc.call(pRefTypeInfo,pFuncDesc)
-                WIN32OLE.ole_release(pRefTypeInfo)
-                if method_name == name
-                    event = true
-                    break
-                end
-            end
-        end
-        releaseTypeAttr.call(pTypeInfo, pTypeAttr)
-        event
-   end
+  def ole_method_event(pTypeInfo,method_index,method_name)
+    event = false
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
 
-   def event?
-      ole_method_event(@pOwnerTypeInfo,@index,self.name)
-   end
+    getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
+    getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
+    getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
+    getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
 
-   def event_interface
-       if event?
-           name = 0.chr * 4
-           hr = WIN32OLE_TYPE.ole_docinfo_from_type(@pTypeInfo, name, nil, nil, nil)
-           if hr == S_OK
-               str = 0.chr * 256
-               wcscpy(str,name.unpack('L').first)
-               return wide_to_multi(str)
-           end
-       end
-       nil
-   end
+    p = 0.chr * 4
+    hr = getTypeAttr.call(pTypeInfo,p)
+    pTypeAttr = p.unpack('L').first
 
-    def ole_method_docinfo_from_type(pTypeInfo,method_index,name,helpstr,helpcontext,helpfile)
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
-      getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
-      getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
-      getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
-      releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return hr if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      memid = funcDesc[0,4].unpack('L').first
-        hr = getDocumentation.call(pTypeInfo,memid,name,helpstr,helpcontext,helpfile)
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        hr
+    return event if hr != S_OK
+
+    typeAttr = 0.chr * 76
+    memcpy(typeAttr,pTypeAttr,76)
+
+    if typeAttr[40,4].unpack('L').first != TKIND_COCLASS
+      releaseTypeAttr.call(pTypeInfo, pTypeAttr)
+      return event
     end
+
+    for i in 0 ... typeAttr[48,2].unpack('S').first
+      flags = 0.chr * 4
+      hr = getImplTypeFlags.call(pTypeInfo, i,flags)
+
+      next if hr != S_OK
+
+      if (flags.unpack('L').first & IMPLTYPEFLAG_FSOURCE) != 0
+        href = 0.chr * 4
+        hr = getRefTypeOfImplType.call(pTypeInfo,i,href)
+        next if hr != S_OK
+        href = href.unpack('L').first
+        p = 0.chr * 4
+        hr = getRefTypeInfo.call(pTypeInfo,href,p)
+        next if hr != S_OK
+        pRefTypeInfo = p.unpack('L').first
+        p = 0.chr * 4
+        hr = getFuncDesc.call(pRefTypeInfo,method_index,p)
+
+        if hr != S_OK
+          WIN32OLE.ole_release(pRefTypeInfo)
+          next
+        end
+
+        pFuncDesc = p.unpack('L').first
+        funcDesc = 0.chr * 52
+        memcpy(funcDesc,pFuncDesc,52)
+        memid = funcDesc[0,4].unpack('L').first
+        bstr = 0.chr * 4
+        hr = getDocumentation.call(pRefTypeInfo,memid,bstr,nil,nil,nil)
+
+        if hr != S_OK
+          releaseFuncDesc.call(pRefTypeInfo, pFuncDesc)
+          WIN32OLE.ole_release(pRefTypeInfo)
+          next
+        end
+
+        str = 0.chr * 256
+        wcscpy(str,bstr.unpack('L').first)
+        name = wide_to_multi(str)
+        releaseFuncDesc.call(pRefTypeInfo,pFuncDesc)
+        WIN32OLE.ole_release(pRefTypeInfo)
+
+        if method_name == name
+          event = true
+          break
+        end
+      end
+    end
+    releaseTypeAttr.call(pTypeInfo, pTypeAttr)
+    event
+  end
+
+  def event?
+    ole_method_event(@pOwnerTypeInfo,@index,self.name)
+  end
+
+  def event_interface
+    if event?
+      name = 0.chr * 4
+      hr = WIN32OLE_TYPE.ole_docinfo_from_type(@pTypeInfo, name, nil, nil, nil)
+      if hr == S_OK
+        str = 0.chr * 256
+        wcscpy(str,name.unpack('L').first)
+        return wide_to_multi(str)
+      end
+    end
+    nil
+  end
+
+  def ole_method_docinfo_from_type(pTypeInfo,method_index,name,helpstr,helpcontext,helpfile)
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
+    #getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
+    #getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
+    #getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
+    #releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+
+    return hr if hr != S_OK
+
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    memid = funcDesc[0,4].unpack('L').first
+    hr = getDocumentation.call(pTypeInfo,memid,name,helpstr,helpcontext,helpfile)
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+
+    hr
+  end
 
     def ole_method_helpstring(pTypeInfo,method_index)
         bhelpstring = 0.chr * 4
@@ -4156,246 +4174,268 @@ class WIN32OLE_METHOD
        ole_method_helpcontext(@pTypeInfo,@index)
    end
 
-    def ole_method_dispid(pTypeInfo,method_index)
-        dispid = nil
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return dispid if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      dispid = funcDesc[0,4].unpack('L').first
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        dispid
-    end
+  def ole_method_dispid(pTypeInfo,method_index)
+    dispid = nil
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+
+    return dispid if hr != S_OK
+
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    dispid = funcDesc[0,4].unpack('L').first
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    dispid
+  end
 
    def dispid
        ole_method_dispid(@pTypeInfo,@index)
    end
 
-    def ole_method_offset_vtbl(pTypeInfo,method_index)
-        offset_vtbl = nil
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return offset_vtbl if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      offset_vtbl = funcDesc[28,2].unpack('S').first
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        offset_vtbl
-    end
+  def ole_method_offset_vtbl(pTypeInfo,method_index)
+    offset_vtbl = nil
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+    return offset_vtbl if hr != S_OK
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    offset_vtbl = funcDesc[28,2].unpack('S').first
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    offset_vtbl
+  end
 
-   def offset_vtbl
-       ole_method_offset_vtbl(@pTypeInfo,@index)
-   end
+  def offset_vtbl
+    ole_method_offset_vtbl(@pTypeInfo,@index)
+  end
 
-    def ole_method_size_params(pTypeInfo,method_index)
-        size_params = nil
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return size_params if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      size_params = funcDesc[24,2].unpack('S').first
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        size_params
-    end
+  def ole_method_size_params(pTypeInfo,method_index)
+    size_params = nil
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+    return size_params if hr != S_OK
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    size_params = funcDesc[24,2].unpack('S').first
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    size_params
+  end
 
-   def size_params
-       ole_method_size_params(@pTypeInfo,@index)
-   end
+  def size_params
+    ole_method_size_params(@pTypeInfo,@index)
+  end
 
-    def ole_method_size_opt_params(pTypeInfo,method_index)
-        size_opt_params = nil
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return size_opt_params if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      size_opt_params = funcDesc[26,2].unpack('S').first
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        size_opt_params
-    end
+  def ole_method_size_opt_params(pTypeInfo,method_index)
+    size_opt_params = nil
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+    return size_opt_params if hr != S_OK
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    size_opt_params = funcDesc[26,2].unpack('S').first
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    size_opt_params
+  end
 
    def size_opt_params
        ole_method_size_opt_params(@pTypeInfo,@index)
    end
 
-    def ole_method_params(pTypeInfo,method_index)
-        params = []
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      getNames = Win32::API::Function.new(table[7],'PLPLP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return params if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      memid = funcDesc[0,4].unpack('L').first
-      cParams = funcDesc[24,2].unpack('S').first
-        bstrs = 0.chr * 4 * (cParams + 1)
-        len = 0.chr * 4
-      hr = getNames.call(pTypeInfo,memid,bstrs,cParams + 1,len)
-      if hr != S_OK
-          releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-          params
-       end
-       if cParams > 0
-           for i in 1 ... len.unpack('L').first
-               param = WIN32OLE_PARAM.new
-               param.pTypeInfo = pTypeInfo
-               WIN32OLE.ole_addref(pTypeInfo)
-               param.method_index = method_index
-               param.index = i - 1
-               bstr = bstrs[i*4,4].unpack('L').first
-               str = 0.chr * 256
-               wcscpy(str,bstr)
-               SysFreeString(bstr)
-               param.name = wide_to_multi(str)
-               params.push(param)
-           end
-       end
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        params
+  def ole_method_params(pTypeInfo,method_index)
+    params = []
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+    getNames = Win32::API::Function.new(table[7],'PLPLP','L')
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+
+    return params if hr != S_OK
+
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    memid = funcDesc[0,4].unpack('L').first
+    cParams = funcDesc[24,2].unpack('S').first
+    bstrs = 0.chr * 4 * (cParams + 1)
+    len = 0.chr * 4
+    hr = getNames.call(pTypeInfo,memid,bstrs,cParams + 1,len)
+
+    if hr != S_OK
+      releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+      params
     end
 
-   def params
-       ole_method_params(@pTypeInfo,@index)
-   end
+    if cParams > 0
+      for i in 1 ... len.unpack('L').first
+        param = WIN32OLE_PARAM.new
+        param.pTypeInfo = pTypeInfo
+        WIN32OLE.ole_addref(pTypeInfo)
+        param.method_index = method_index
+        param.index = i - 1
+        bstr = bstrs[i*4,4].unpack('L').first
+        str = 0.chr * 256
+        wcscpy(str,bstr)
+        SysFreeString(bstr)
+        param.name = wide_to_multi(str)
+        params.push(param)
+      end
+    end
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    params
+  end
 
-   def inspect
-      "#<#{self.class}:#{self.to_s}>"
-   end
+  def params
+    ole_method_params(@pTypeInfo,@index)
+  end
+
+  def inspect
+    "#<#{self.class}:#{self.to_s}>"
+  end
 end
 
 class WIN32OLE_PARAM
-   attr_accessor :pTypeInfo
-   attr_accessor :method_index
-   attr_accessor :name
-   attr_accessor :index
+  attr_accessor :pTypeInfo
+  attr_accessor :method_index
+  attr_accessor :name
+  attr_accessor :index
 
-   alias :to_s :name
+  alias :to_s :name
 
-   def ole_param_ole_type(pTypeInfo,method_index,index)
-      type = "unknown type"
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return type if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      tdesc = 0.chr * 16
-      memcpy(tdesc,funcDesc[8,4].unpack('L').first + index*16,16)
-      type = WIN32OLE_TYPE.ole_typedesc2val(pTypeInfo,tdesc,nil)
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        type
+  def ole_param_ole_type(pTypeInfo,method_index,index)
+    type = "unknown type"
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+
+    return type if hr != S_OK
+
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    tdesc = 0.chr * 16
+    memcpy(tdesc,funcDesc[8,4].unpack('L').first + index*16,16)
+    type = WIN32OLE_TYPE.ole_typedesc2val(pTypeInfo,tdesc,nil)
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    type
+  end
+
+  def ole_type
+    ole_param_ole_type(@pTypeInfo,@method_index,@index)
+  end
+
+  def ole_param_ole_type_detail(pTypeInfo,method_index,index)
+    typedetail = []
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+
+    return typedetail if hr != S_OK
+
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    tdesc = 0.chr * 16
+    memcpy(tdesc,funcDesc[8,4].unpack('L').first + index*16,16)
+    WIN32OLE_TYPE.ole_typedesc2val(pTypeInfo,tdesc,typedetail)
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    typedetail
+  end
+
+  def ole_type_detail
+    ole_param_ole_type_detail(@pTypeInfo,@method_index,@index)
+  end
+
+  def ole_param_flag_mask(pTypeInfo,method_index,index,mask)
+    ret = false
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 88
+    memcpy(lpVtbl,pTypeInfo,4)
+    memcpy(table,lpVtbl.unpack('L').first,88)
+    table = table.unpack('L*')
+    #getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
+    getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+    releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
+    p = 0.chr * 4
+    hr = getFuncDesc.call(pTypeInfo, method_index, p)
+
+    return ret if hr != S_OK
+
+    pFuncDesc = p.unpack('L').first
+    funcDesc = 0.chr * 52
+    memcpy(funcDesc,pFuncDesc,52)
+    tdesc = 0.chr * 16
+    memcpy(tdesc,funcDesc[8,4].unpack('L').first + index*16,16)
+
+    if (tdesc[12,2].unpack('S').first & mask) != 0
+      ret = true
     end
 
-   def ole_type
-       ole_param_ole_type(@pTypeInfo,@method_index,@index)
-   end
-
-    def ole_param_ole_type_detail(pTypeInfo,method_index,index)
-        typedetail = []
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return typedetail if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      tdesc = 0.chr * 16
-      memcpy(tdesc,funcDesc[8,4].unpack('L').first + index*16,16)
-      WIN32OLE_TYPE.ole_typedesc2val(pTypeInfo,tdesc,typedetail)
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        typedetail
-    end
-
-   def ole_type_detail
-       ole_param_ole_type_detail(@pTypeInfo,@method_index,@index)
-   end
-
-    def ole_param_flag_mask(pTypeInfo,method_index,index,mask)
-        ret = false
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 88
-      memcpy(lpVtbl,pTypeInfo,4)
-      memcpy(table,lpVtbl.unpack('L').first,88)
-      table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
-      p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return ret if hr != S_OK
-        pFuncDesc = p.unpack('L').first
-      funcDesc = 0.chr * 52
-      memcpy(funcDesc,pFuncDesc,52)
-      tdesc = 0.chr * 16
-      memcpy(tdesc,funcDesc[8,4].unpack('L').first + index*16,16)
-      if (tdesc[12,2].unpack('S').first & mask) != 0
-          ret = true
-       end
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        ret
-    end
+    releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+    ret
+  end
 
    def input?
        ole_param_flag_mask(@pTypeInfo,@method_index,@index,PARAMFLAG_FIN)
@@ -4414,20 +4454,19 @@ class WIN32OLE_PARAM
    end
 
     def ole_param_default(pTypeInfo,method_index,index)
-        mask = PARAMFLAG_FOPT|PARAMFLAG_FHASDEFAULT
-        defval = nil
+      mask = PARAMFLAG_FOPT|PARAMFLAG_FHASDEFAULT
+      defval = nil
       lpVtbl = 0.chr * 4
       table = 0.chr * 88
       memcpy(lpVtbl,pTypeInfo,4)
       memcpy(table,lpVtbl.unpack('L').first,88)
       table = table.unpack('L*')
-      getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-        getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
+      getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
       releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
       p = 0.chr * 4
-        hr = getFuncDesc.call(pTypeInfo, method_index, p)
-        return ret if hr != S_OK
-        pFuncDesc = p.unpack('L').first
+      hr = getFuncDesc.call(pTypeInfo, method_index, p)
+      return ret if hr != S_OK
+      pFuncDesc = p.unpack('L').first
       funcDesc = 0.chr * 52
       memcpy(funcDesc,pFuncDesc,52)
       tdesc = 0.chr * 16
@@ -4436,9 +4475,9 @@ class WIN32OLE_PARAM
           pParamDescEx = 0.chr * 24
           memcpy(pParamDescEx,tdesc[8,4].unpack('L').first,24)
           defval = WIN32OLE.ole_variant2val(pParamDescEx[8,16])
-       end
-        releaseFuncDesc.call(pTypeInfo, pFuncDesc)
-        defval
+      end
+      releaseFuncDesc.call(pTypeInfo, pFuncDesc)
+      defval
     end
 
    def default
@@ -4596,7 +4635,7 @@ class WIN32OLE_EVENT
       args.push(outargv)
     end
 
-    arg = [handler,mid,args]
+    #arg = [handler,mid,args]
 
     begin
       result = handler.send(mid,*args)
@@ -4806,14 +4845,10 @@ class WIN32OLE_EVENT
       table = table.unpack('L*')
 
       getTypeAttr = Win32::API::Function.new(table[3], 'PP','L')
-      getVarDesc = Win32::API::Function.new(table[6], 'PLP','L')
-      getNames = Win32::API::Function.new(table[7], 'PLPLP','L')
       getRefTypeOfImplType = Win32::API::Function.new(table[8], 'PLP','L')
       getRefTypeInfo = Win32::API::Function.new(table[14], 'PLP','L')
-      getFuncDesc = Win32::API::Function.new(table[5], 'PLP','L')
       getDocumentation = Win32::API::Function.new(table[12], 'PLPPPP','L')
       releaseTypeAttr = Win32::API::Function.new(table[19], 'PP','L')
-      releaseVarDesc = Win32::API::Function.new(table[21], 'PP','L')
       addRef = Win32::API::Function.new(table[1],'P','L')
 
       ptr = 0.chr * 4
@@ -4890,8 +4925,6 @@ class WIN32OLE_EVENT
 
     getContainingTypeLib = Win32::API::Function.new(table[18],'PPP','L')
     getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-    getVarDesc = Win32::API::Function.new(table[6],'PLP','L')
-    getNames = Win32::API::Function.new(table[7],'PLPLP','L')
     releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
     getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
     getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
@@ -4914,7 +4947,7 @@ class WIN32OLE_EVENT
       break if found
 
       p = 0.chr * 4
-      h = getTypeInfo.call(pTypeLib, i, p)
+      hr = getTypeInfo.call(pTypeLib, i, p)
       pTypeInfo2 = p.unpack('L').first
 
       next if hr != S_OK
@@ -4994,7 +5027,6 @@ class WIN32OLE_EVENT
   def find_default_source_from_typeinfo(pTypeInfo,pTypeAttr,ppTypeInfo)
     typeAttr = 0.chr * 76
     memcpy(typeAttr,pTypeAttr,76)
-    typekind = typeAttr[40,4].unpack('L').first
     cImplTypes = typeAttr[48,2].unpack('S').first
     lpVtbl = 0.chr * 4
     table = 0.chr * 80
@@ -5003,11 +5035,9 @@ class WIN32OLE_EVENT
     memcpy(table,lpVtbl.unpack('L').first,80)
 
     table = table.unpack('L*')
-    getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
     getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
     getImplTypeFlags = Win32::API::Function.new(table[9],'PLP','L')
     getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
-    releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
     hr = E_NOINTERFACE
 
     for i in 0 ... cImplTypes
@@ -5082,8 +5112,6 @@ class WIN32OLE_EVENT
       memcpy(table,lpVtbl.unpack('L').first,88)
       table = table.unpack('L*')
       getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
-      getVarDesc = Win32::API::Function.new(table[6],'PLP','L')
-      getNames = Win32::API::Function.new(table[7],'PLPLP','L')
       releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
       p = 0.chr * 4
       hr = getTypeAttr(pTypeInfo,p)
@@ -5565,7 +5593,7 @@ class WIN32OLE_VARIANT
       if (@var[0,2].unpack('S').first & VT_BYREF) != 0
          ref = 0.chr * 16
          memcpy(ref,@var[8,4].unpack('L').first,16)
-         pas = ref[8,4].unpack('L').first
+         psa = ref[8,4].unpack('L').first
       else
          psa = @var[8,4].unpack('L').first
       end
