@@ -1518,188 +1518,206 @@ class WIN32OLE
     error_msg
   end
 
-   def ole_propertyput(property,value)
-      dispIDParam = [DISPID_PROPERTYPUT].pack('L')
-      wFlags = DISPATCH_PROPERTYPUT|DISPATCH_PROPERTYPUTREF
-      dispParams = 0.chr * 16
-      propertyValue = 0.chr * 32
-      argErr = 0.chr * 4
+  def ole_propertyput(property,value)
+    dispIDParam = [DISPID_PROPERTYPUT].pack('L')
+    wFlags = DISPATCH_PROPERTYPUT|DISPATCH_PROPERTYPUTREF
+    dispParams = 0.chr * 16
+    propertyValue = 0.chr * 32
+    argErr = 0.chr * 4
 
-      p = propertyValue[0,16]
-      VariantInit(p)
-      propertyValue[0,16] = p
-      p = propertyValue[16,16]
-      VariantInit(p)
-      propertyValue[16,16] = p
-      excepinfo = 0.chr * 32
+    p = propertyValue[0,16]
+    VariantInit(p)
+    propertyValue[0,16] = p
+    p = propertyValue[16,16]
+    VariantInit(p)
+    propertyValue[16,16] = p
+    excepinfo = 0.chr * 32
 
-      wproperty = multi_to_wide(property)
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 28
-      memcpy(lpVtbl,@pDispatch,4)
-      memcpy(table,lpVtbl.unpack('L').first,28)
-      table = table.unpack('L*')
-      getIDsOfNames = Win32::API::Function.new(table[5],'PPPLLP','L')
-      invoke = Win32::API::Function.new(table[6],'PLPLLPPPP','L')
-      p = 0.chr * 4
-      hr = getIDsOfNames.call(@pDispatch,IID_NULL,[wproperty].pack('P'),1,@@lcid,p)
-      dispid = p.unpack('L').first
-      if hr != S_OK
-         raise WIN32OLERuntimeError,"unknown property or method: `#{property}'"
+    wproperty = multi_to_wide(property)
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 28
+    memcpy(lpVtbl,@pDispatch,4)
+    memcpy(table,lpVtbl.unpack('L').first,28)
+    table = table.unpack('L*')
+    getIDsOfNames = Win32::API::Function.new(table[5],'PPPLLP','L')
+    invoke = Win32::API::Function.new(table[6],'PLPLLPPPP','L')
+    p = 0.chr * 4
+    hr = getIDsOfNames.call(@pDispatch,IID_NULL,[wproperty].pack('P'),1,@@lcid,p)
+    dispid = p.unpack('L').first
+
+    if hr != S_OK
+      raise WIN32OLERuntimeError,"unknown property or method: `#{property}'"
+    end
+
+    p = propertyValue[0,16]
+    WIN32OLE.ole_val2variant(value,p)
+    propertyValue[0,16] = p
+    dispParams[4,4] = [dispIDParam].pack('P')
+    dispParams[0,4] = [propertyValue].pack('P')
+    dispParams[8,4] = [1].pack('L')
+    dispParams[12,4] = [1].pack('L')
+    hr = invoke.call(@pDispatch,dispid,IID_NULL,@@lcid,wFlags,dispParams,nil,excepinfo,argErr)
+    cArgs = dispParams[8,4].unpack('L').first
+
+    for index in 0 ... cArgs
+      p = propertyValue[index*16,16]
+      VariantClear(p)
+      propertyValue[index*16,16] = p
+    end
+
+    if hr != S_OK
+      v = ole_excepinfo2msg(excepinfo)
+      raise WIN32OLERuntimeError, "(in setting property `#{property}': )#{v}"
+    end
+
+    nil
+  end
+
+  def ole_invoke2(dispid,args,types,dispkind)
+    unless args.is_a?(Array)
+      raise TypeError, "wrong argument type #{args.class} (excepted Array)"
+    end
+
+    unless types.is_a?(Array)
+      raise TypeError, "wrong argument type #{types.class} (excepted Array)"
+    end
+
+    result = 0.chr * 16
+    excepinfo = 0.chr * 32
+    dispParams = 0.chr * 16
+    VariantInit(result)
+    dispParams[8,4] = [args.length].pack('L')
+    rgvarg = 0.chr * 16 * args.length
+    dispParams[0,4] = [rgvarg].pack('P')
+    realargs = 0.chr * 16 * args.length
+    j = args.length
+
+    for i in 0 ... args.length
+      j-=1
+      p = realargs[i*16,16]
+      VariantInit(p)
+      realargs[i*16,16] = p
+      p = rgvarg[i*16,16]
+      VariantInit(p)
+      rgvarg[i*16,16] = p
+      vt = types[j]
+      rgvarg[i*16,2] = [vt].pack('S')
+      param = args[j]
+
+      if param.nil?
+        rgvarg[i*16,2] = realargs[i*16,2] = [VT_ERROR].pack('S')
+        rgvarg[i*16+8,4] = realargs[i*16+8,4] = [DISP_E_PARAMNOTFOUND].pack('L')
+      else
+        if (vt & VT_ARRAY) != 0
+          unless param.is_a?(Array)
+            raise TypeError, "wrong argument type #{param.class} (excepted Array)"
+          end
+
+          rgsabound = [param.length,0].pack('LL')
+          v = vt & ~(VT_ARRAY | VT_BYREF)
+          realargs[i*16+8,4] = [SafeArrayCreate(v, 1, rgsabound)].pack('L')
+          realargs[i*16,2] = [VT_ARRAY | v].pack('S')
+          SafeArrayLock(realargs[i*16+8,4].unpack('L').first)
+          arr = 0.chr * 12
+          memcpy(arr,realargs[i*16+8,4].unpack('L').first,12)
+          pb = arr[12,4].unpack('L').first
+
+          for ent in 0 ... param.length
+            velem = 0.chr * 16
+            elem = param[ent]
+            WIN32OLE.ole_val2variant(elem,velem)
+            if v != VT_VARIANT
+              VariantChangeTypeEx(velem,velem,@@lcid,0,v)
+            end
+
+            case v
+            when VT_VARIANT
+              memcpy(pb,velem,16)
+              pb += 16
+            when VT_R8,VT_CY,VT_DATE
+              memcpy(pb,velem[8,8],8)
+              pb += 8
+            when VT_BOOL,VT_I2,VT_UI2
+              memcpy(pb,velem[8,2],2)
+              pb += 2
+            when VT_UI1,VT_I1
+              memcpy(pb,vleme[8,1],1)
+              pb += 1
+            else
+              memcpy(pb,vleme[8,4],4)
+              pb += 4
+            end
+          end
+
+          SafeArrayUnlock(realargs[i*16+8,4].unpack('L').first)
+        else
+          p = realargs[i*16,16]
+          WIN32OLE.ole_val2variant(param,p)
+          realargs[i*16,16] = p
+          if vt & ~VT_BYREF != VT_VARIANT
+            p = realargs[i*16,16]
+            hr = VariantChangeTypeEx(p,p,@@lcid,0,vt & ~VT_BYREF)
+            realargs[i*16,16] = p
+            if hr != S_OK
+              raise TypeError, "not valid value"
+            end
+          end
+        end
+
+        if (vt & VT_BYREF) != 0 || vt == VT_VARIANT
+          if vt == VT_VARIANT
+            rgvarg[i*16,2] = [VT_VARIANT | VT_BYREF].pack('S')
+          end
+
+          case vt & ~VT_BYREF
+          when VT_VARIANT
+            rgvarg[i*16+8,4] = [realargs[i*16,16]].pack('P')
+          when VT_R8,VT_CY,VT_DATE
+            rgvarg[i*16+8,4] = [realargs[i*16+8,8]].pack('P')
+          when VT_BOOL,VT_I2,VT_UI2
+            rgvarg[i*16+8,4] = [realargs[i*16+8,4]].pack('P')
+          when VT_UI1,VT_I1
+            rgvarg[i*16+8,4] = [realargs[i*16+8,1]].pack('P')
+          else
+            rgvarg[i*16+8,4] = [realargs[i*16+8,4]].pack('P')
+          end
+        else
+          rgvarg[i*16+8,4] = [realargs[i*16+8,8]].pack('P')
+        end
       end
+    end
 
-      p = propertyValue[0,16]
-      WIN32OLE.ole_val2variant(value,p)
-      propertyValue[0,16] = p
-      dispParams[4,4] = [dispIDParam].pack('P')
-      dispParams[0,4] = [propertyValue].pack('P')
-      dispParams[8,4] = [1].pack('L')
+    dispParams[0,4] = [rgvarg].pack('P')
+
+    if (dispkind & DISPATCH_PROPERTYPUT) != 0
       dispParams[12,4] = [1].pack('L')
-      hr = invoke.call(@pDispatch,dispid,IID_NULL,@@lcid,wFlags,dispParams,nil,excepinfo,argErr)
-      cArgs = dispParams[8,4].unpack('L').first
-      for index in 0 ... cArgs
-         p = propertyValue[index*16,16]
-         VariantClear(p)
-         propertyValue[index*16,16] = p
-      end
-      if hr != S_OK
-         v = ole_excepinfo2msg(excepinfo)
-         raise WIN32OLERuntimeError, "(in setting property `#{property}': )#{v}"
-      end
-      nil
-   end
+      dispParams[4,4] = [DISPID_PROPERTYPUT].pack('L')
+    end
 
-   def ole_invoke2(dispid,args,types,dispkind)
-      unless args.is_a?(Array)
-         raise TypeError, "wrong argument type #{args.class} (excepted Array)"
-      end
-      unless types.is_a?(Array)
-         raise TypeError, "wrong argument type #{types.class} (excepted Array)"
-      end
-      result = 0.chr * 16
-      excepinfo = 0.chr * 32
-      dispParams = 0.chr * 16
-      VariantInit(result)
-      dispParams[8,4] = [args.length].pack('L')
-      rgvarg = 0.chr * 16 * args.length
-      dispParams[0,4] = [rgvarg].pack('P')
-      realargs = 0.chr * 16 * args.length
-      j = args.length
-      for i in 0 ... args.length
-         j-=1
-         p = realargs[i*16,16]
-         VariantInit(p)
-         realargs[i*16,16] = p
-         p = rgvarg[i*16,16]
-         VariantInit(p)
-         rgvarg[i*16,16] = p
-         vt = types[j]
-         rgvarg[i*16,2] = [vt].pack('S')
-         param = args[j]
-         if param.nil?
-            rgvarg[i*16,2] = realargs[i*16,2] = [VT_ERROR].pack('S')
-            rgvarg[i*16+8,4] = realargs[i*16+8,4] = [DISP_E_PARAMNOTFOUND].pack('L')
-         else
-            if (vt & VT_ARRAY) != 0
-               unless param.is_a?(Array)
-                  raise TypeError, "wrong argument type #{param.class} (excepted Array)"
-               end
-               rgsabound = [param.length,0].pack('LL')
-               v = vt & ~(VT_ARRAY | VT_BYREF)
-               realargs[i*16+8,4] = [SafeArrayCreate(v, 1, rgsabound)].pack('L')
-               realargs[i*16,2] = [VT_ARRAY | v].pack('S')
-               SafeArrayLock(realargs[i*16+8,4].unpack('L').first)
-               arr = 0.chr * 12
-               memcpy(arr,realargs[i*16+8,4].unpack('L').first,12)
-               pb = arr[12,4].unpack('L').first
-               for ent in 0 ... param.length
-                  velem = 0.chr * 16
-                  elem = param[ent]
-                  WIN32OLE.ole_val2variant(elem,velem)
-                  if v != VT_VARIANT
-                     VariantChangeTypeEx(velem,velem,@@lcid,0,v)
-                  end
-                  case v
-                  when VT_VARIANT
-                     memcpy(pb,velem,16)
-                     pb += 16
-                  when VT_R8,VT_CY,VT_DATE
-                     memcpy(pb,velem[8,8],8)
-                     pb += 8
-                  when VT_BOOL,VT_I2,VT_UI2
-                     memcpy(pb,velem[8,2],2)
-                     pb += 2
-                  when VT_UI1,VT_I1
-                     memcpy(pb,vleme[8,1],1)
-                     pb += 1
-                  else
-                     memcpy(pb,vleme[8,4],4)
-                     pb += 4
-                  end
-               end
-               SafeArrayUnlock(realargs[i*16+8,4].unpack('L').first)
-            else
-               p = realargs[i*16,16]
-               WIN32OLE.ole_val2variant(param,p)
-               realargs[i*16,16] = p
-               if vt & ~VT_BYREF != VT_VARIANT
-                  p = realargs[i*16,16]
-                  hr = VariantChangeTypeEx(p,p,@@lcid,0,vt & ~VT_BYREF)
-                  realargs[i*16,16] = p
-                  if hr != S_OK
-                     raise TypeError, "not valid value"
-                  end
-               end
-            end
-            if (vt & VT_BYREF) != 0 || vt == VT_VARIANT
-               if vt == VT_VARIANT
-                  rgvarg[i*16,2] = [VT_VARIANT | VT_BYREF].pack('S')
-               end
-               case vt & ~VT_BYREF
-               when VT_VARIANT
-                  rgvarg[i*16+8,4] = [realargs[i*16,16]].pack('P')
-               when VT_R8,VT_CY,VT_DATE
-                  rgvarg[i*16+8,4] = [realargs[i*16+8,8]].pack('P')
-               when VT_BOOL,VT_I2,VT_UI2
-                  rgvarg[i*16+8,4] = [realargs[i*16+8,4]].pack('P')
-               when VT_UI1,VT_I1
-                  rgvarg[i*16+8,4] = [realargs[i*16+8,1]].pack('P')
-               else
-                  rgvarg[i*16+8,4] = [realargs[i*16+8,4]].pack('P')
-               end
-            else
-               rgvarg[i*16+8,4] = [realargs[i*16+8,8]].pack('P')
-            end
-         end
-      end
-      dispParams[0,4] = [rgvarg].pack('P')
+    lpVtbl = 0.chr * 4
+    table = 0.chr * 28
+    memcpy(lpVtbl,@pDispatch,4)
+    memcpy(table,lpVtbl.unpack('L').first,28)
+    table = table.unpack('L*')
+    invoke = Win32::API::Function.new(table[6],'PLPLLPPPP','L')
+    argErr = 0.chr * 4
+    hr = invoke.call(@pDispatch,dispid,IID_NULL,@@lcid,dispkind,dispParams,result,excepinfo,argErr)
 
-      if (dispkind & DISPATCH_PROPERTYPUT) != 0
-         dispParams[12,4] = [1].pack('L')
-         dispParams[4,4] = [DISPID_PROPERTYPUT].pack('L')
-      end
+    if hr != S_OK
+      v = ole_excepinfo2msg(excepinfo)
+      raise WIN32OLERuntimeError, "(in OLE method `<dispatch id:#{dispid}>': #{v})"
+    end
 
-      lpVtbl = 0.chr * 4
-      table = 0.chr * 28
-      memcpy(lpVtbl,@pDispatch,4)
-      memcpy(table,lpVtbl.unpack('L').first,28)
-      table = table.unpack('L*')
-      invoke = Win32::API::Function.new(table[6],'PLPLLPPPP','L')
-      argErr = 0.chr * 4
-      hr = invoke.call(@pDispatch,dispid,IID_NULL,@@lcid,dispkind,dispParams,result,excepinfo,argErr)
-      if hr != S_OK
-         v = ole_excepinfo2msg(excepinfo)
-         raise WIN32OLERuntimeError, "(in OLE method `<dispatch id:#{dispid}>': #{v})"
-      end
-      cArgs = dispParams[8,4].unpack('L').first
-      if cArgs > 0
-         set_argv(realargs, 0, cArgs)
-      end
+    cArgs = dispParams[8,4].unpack('L').first
 
-      obj = WIN32OLE.ole_variant2val(result)
-      VariantClear(result)
-      obj
-   end
+    if cArgs > 0
+      set_argv(realargs, 0, cArgs)
+    end
+
+    obj = WIN32OLE.ole_variant2val(result)
+    VariantClear(result)
+    obj
+  end
 
    def ole_invoke(method,args,flags,is_bracket)
       excepinfo = 0.chr * 32
@@ -2076,7 +2094,6 @@ class WIN32OLE
       table = table.unpack('L*')
       getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
       getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      getNames = Win32::API::Function.new(table[7],'PLPLP','L')
       getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
       releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
       releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
@@ -2126,8 +2143,6 @@ class WIN32OLE
       getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
       getRefTypeOfImplType = Win32::API::Function.new(table[8],'PLP','L')
       getRefTypeInfo = Win32::API::Function.new(table[14],'PLP','L')
-      getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
       releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
       p = 0.chr * 4
       hr = getTypeAttr.call(pTypeInfo,p)
@@ -2183,25 +2198,31 @@ class WIN32OLE
       _ole_methods(INVOKE_FUNC)
    end
 
-   def ole_method(cmdname)
-      unless cmdname.is_a?(String)
-         raise TypeError, "1st parameter must be String"
-      end
-      p = 0.chr * 4
-      hr = typeinfo_from_ole(p)
-      if hr != S_OK
-         rasie RuntimeError, "failed to get ITypeInfo"
-      end
-      pTypeInfo = p.unpack('L').first
-      method = WIN32OLE_METHOD.new
-      obj = method.olemethod_from_typeinfo(pTypeInfo, cmdname)
-      WIN32OLE.ole_release(pTypeInfo)
-      if obj.nil?
-          raise WIN32OLERuntimeError, "not found #{cmdname}"
-       end
-       obj
-   end
-   alias :ole_method_help :ole_method
+  def ole_method(cmdname)
+    unless cmdname.is_a?(String)
+      raise TypeError, "1st parameter must be String"
+    end
+
+    p = 0.chr * 4
+    hr = typeinfo_from_ole(p)
+
+    if hr != S_OK
+      raise RuntimeError, "failed to get ITypeInfo"
+    end
+
+    pTypeInfo = p.unpack('L').first
+    method = WIN32OLE_METHOD.new
+    obj = method.olemethod_from_typeinfo(pTypeInfo, cmdname)
+    WIN32OLE.ole_release(pTypeInfo)
+
+    if obj.nil?
+      raise WIN32OLERuntimeError, "not found #{cmdname}"
+    end
+
+    obj
+  end
+
+  alias :ole_method_help :ole_method
 
    def ole_activex_initialize
         lpVtbl = 0.chr * 4
@@ -2875,8 +2896,6 @@ class WIN32OLE_TYPELIB
       memcpy(lpVtbl,pTypeLib,4)
       memcpy(table,lpVtbl.unpack('L').first,40)
       table = table.unpack('L*')
-      getTypeInfoCount = Win32::API::Function.new(table[3],'P','L')
-      getTypeInfo = Win32::API::Function.new(table[4],'PLP','L')
       getDocumentation = Win32::API::Function.new(table[9],'PLPPPP','L')
       bstr = 0.chr * 4
       getDocumentation.call(pTypeLib,-1,bstr,nil,nil,nil)
@@ -2960,7 +2979,6 @@ class WIN32OLE_TYPE
          raise TypeError, "wrong argument type (expected String)"
       end
       file = WIN32OLE_TYPELIB.typelib_file(typelib)
-      type = typlelib if file.nil?
       buf = multi_to_wide(file)
       p = 0.chr * 4
       hr = LoadTypeLibEx(buf, REGKIND_NONE, p)
@@ -3735,7 +3753,6 @@ class WIN32OLE_METHOD
       table = table.unpack('L*')
       getTypeAttr = Win32::API::Function.new(table[3],'PP','L')
       getFuncDesc = Win32::API::Function.new(table[5],'PLP','L')
-      getNames = Win32::API::Function.new(table[7],'PLPLP','L')
       getDocumentation = Win32::API::Function.new(table[12],'PLPPPP','L')
       releaseTypeAttr = Win32::API::Function.new(table[19],'PP','L')
       releaseFuncDesc = Win32::API::Function.new(table[20],'PP','L')
